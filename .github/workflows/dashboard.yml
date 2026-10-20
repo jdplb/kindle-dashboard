@@ -1,0 +1,60 @@
+name: dashboard
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: dashboard
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fuentes y dependencias
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-dejavu-core
+          pip install --quiet pillow requests
+
+      - name: Generar dashboard
+        env:
+          ROTATE: "90"
+          CITY_NAME: "Madrid"
+          LAT: "40.4168"
+          LON: "-3.7038"
+        run: python generate.py
+
+      - name: Keepalive (commit los días 1 y 15)
+        run: |
+          D=$(date -u +%d); H=$(date -u +%H); M=$(date -u +%M)
+          if { [ "$D" = "01" ] || [ "$D" = "15" ]; } && [ "$H" = "03" ] && [ "$M" -lt 30 ]; then
+            git config user.name "dashboard-bot"
+            git config user.email "dashboard-bot@users.noreply.github.com"
+            git commit --allow-empty -m "keepalive $(date -u +%F)"
+            git push
+          fi
+
+      - name: Publicar en gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd site
+          git init -q -b gh-pages
+          git config user.name "dashboard-bot"
+          git config user.email "dashboard-bot@users.noreply.github.com"
+          git add -A
+          git commit -q -m "dashboard $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
